@@ -21,13 +21,25 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 
+// دالة تهيئة المتصفح وضبط الجرافيكس لبيئة Vercel المجانية
 async function getBrowserInstance() {
   const isProduction = process.env.NODE_ENV === "production";
 
   if (isProduction) {
+    // تحميل خطوط اللغة العربية والإيموجي لمنع ظهور مربعات فارغة
     await chromium.font("https://raw.githack.com/wiki/jaimecbernardo/GFontsSpace/fonts/NotoColorEmoji.ttf");
+    
     return await puppeteer.launch({
-      args: chromium.args,
+      args: [
+        ...chromium.args,
+        "--hide-scrollbars",
+        "--disable-web-security",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--single-process" // لتقليل استهلاك الميموري داخل بيئة Serverless
+      ],
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(
         "https://github.com/sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar"
@@ -47,6 +59,7 @@ async function getBrowserInstance() {
   }
 }
 
+// Proxy Endpoint
 app.get("/api/proxy", async (req, res) => {
   const { url, enhanced } = req.query;
   if (!url) return res.status(400).json({ error: "URL is required" });
@@ -78,6 +91,7 @@ app.get("/api/proxy", async (req, res) => {
   }
 });
 
+// PDF Generation Endpoint
 app.post("/api/pdf", async (req, res) => {
   const { url, pageSize = "A4", orientation = "portrait", includeBackground = true, waitMode = "auto", manualWaitTime = 2000, fullPage = false } = req.body;
   if (!url) return res.status(400).json({ error: "URL parameter is required" });
@@ -86,6 +100,9 @@ app.post("/api/pdf", async (req, res) => {
   try {
     browser = await getBrowserInstance();
     const page = await browser.newPage();
+    
+    // تعيين User-Agent حقيقي لتجنب الحجب أثناء سحب المواقع
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
     await page.setViewport({ width: 1280, height: 800 });
 
     if (waitMode === "manual") {
