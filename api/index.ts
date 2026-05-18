@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 
-// دالة تهيئة المتصفح وضبط الجرافيكس لبيئة Vercel المجانية
+// دالة تهيئة المتصفح المستقرة والمطابقة لإصدارات الحزم لـ Vercel
 async function getBrowserInstance() {
   const isProduction = process.env.NODE_ENV === "production";
 
@@ -38,12 +38,10 @@ async function getBrowserInstance() {
         "--disable-setuid-sandbox",
         "--disable-gpu",
         "--disable-dev-shm-usage",
-        "--single-process" // لتقليل استهلاك الميموري داخل بيئة Serverless
+        "--single-process"
       ],
       defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(
-        "https://github.com/sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar"
-      ),
+      executablePath: await chromium.executablePath(), // يستدعي المسار المستقر للحزمة تلقائياً بدون روابط خارجية
       headless: chromium.headless,
     });
   } else {
@@ -101,7 +99,7 @@ app.post("/api/pdf", async (req, res) => {
     browser = await getBrowserInstance();
     const page = await browser.newPage();
     
-    // تعيين User-Agent حقيقي لتجنب الحجب أثناء سحب المواقع
+    // تعيين User-Agent حقيقي لتجنب حجب الخدمات من قبل جدران الحماية للمواقع
     await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
     await page.setViewport({ width: 1280, height: 800 });
 
