@@ -10,6 +10,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "start": "node api/index.ts"
+}
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
@@ -18,12 +19,12 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "got": "^15.0.5",
-    "html-pdf-node": "^1.0.8",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pdfkit": "^0.15.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "tsx": "^4.21.0",
@@ -35,6 +36,7 @@
     "@types/node": "^22.13.4",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
+    "@types/pdfkit": "^0.13.9",
     "typescript": "^5.7.3"
   }
 }
