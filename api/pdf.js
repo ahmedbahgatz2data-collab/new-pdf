@@ -1,7 +1,7 @@
 import got from "got";
 
 export default async function handler(req, res) {
-  // تفعيل إعدادات CORS لبيئة Serverless
+  // إعدادات CORS لبيئة الـ Serverless
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   if (!url) return res.status(400).json({ error: "URL parameter is required" });
 
   try {
-    // جلب كود الـ HTML الحقيقي للموقع بسرعة فائقة وبدون أي لود
+    // سحب كود الـ HTML الخام للموقع المستهدف بسرعة فائقة
     const response = await got(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
       followRedirect: true
     });
 
-    // إرسال الـ HTML الخام مباشرة للواجهة الأمامية
+    // إرسال الـ HTML للـ Frontend في استجابة JSON سريعة
     res.setHeader("Content-Type", "application/json");
     return res.status(200).json({ 
       success: true,
@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     console.error(`Fetch Error for ${url}:`, error.message);
     return res.status(500).json({ 
       success: false, 
-      error: "Failed to fetch site target blueprint", 
+      error: "Failed to fetch site target HTML", 
       details: error.message 
     });
   }
