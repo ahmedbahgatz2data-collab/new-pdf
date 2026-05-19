@@ -44,54 +44,64 @@ export default function App() {
   const [manualWaitTime, setManualWaitTime] = useState("2000");
   const [statuses, setStatuses] = useState<PrintStatus[]>([]);
 
-  // دالة داخلية سريعة لتحويل سورس الـ HTML المستلم محلياً إلى ملف PDF منسق
+  // دالة تحويل الـ HTML إلى PDF معالجة ومضغوطة بالكامل وبمهلة انتظار كافية
   const convertHtmlToPdfBlob = async (htmlContent: string): Promise<Blob> => {
-    // 1. إنشاء حاوية مؤقتة مخفية لحقن الـ HTML مع الحفاظ على أبعاد شاشة الكمبيوتر لضمان الـ Desktop View
+    // 1. إنشاء حاوية مؤقتة مخفية لحقن الـ HTML
     const tempContainer = document.createElement('div');
     tempContainer.style.position = 'absolute';
     tempContainer.style.left = '-9999px';
     tempContainer.style.top = '0px';
-    tempContainer.style.width = '1280px'; // عرض قياسي لمنع تداخل العناصر والـ Responsive Breakpoints
+    tempContainer.style.width = '1280px'; // عرض قياسي للـ Desktop لمنع تداخل العناصر
     tempContainer.innerHTML = htmlContent;
     document.body.appendChild(tempContainer);
 
-    // انتظر أجزاء من الثانية لضمان استقرار الـ Styles داخلياً قبل التقاطها
-    await new Promise((resolve) => setTimeout(resolve, Number(waitMode === 'manual' ? manualWaitTime : 500)));
+    // 2. زيادة وقت الانتظار لإعطاء فرصة كاملة لتحميل كافة الصور والجرافيكس والمحتوى الداخلي للموقع
+    // إذا كان الوضع يدوي سيأخذ القيمة المحددة، وإذا كان تلقائي سينتظر 3000 ملي ثانية (3 ثوانٍ) كحد أدنى آمن
+    const delayTime = waitMode === 'manual' ? Number(manualWaitTime) : 3000;
+    await new Promise((resolve) => setTimeout(resolve, delayTime));
 
-    // 2. التقاط لقطة شاشة دقيقة بكامل التنسيقات والألوان
+    // 3. التقاط الشاشة مع تحسين وإلغاء الـ Scale الضخم لتقليل حجم الصورة الناتجة
     const canvas = await html2canvas(tempContainer, {
       useCORS: true,
       allowTaint: true,
-      scale: 1.5, // درجة وضوح ممتازة متوازنة مع حجم الملف
-      logging: false
+      scale: 1.0, // تقليل الـ Scale من 1.5 إلى 1.0 لخفض حجم الملف بشكل جذري
+      logging: false,
+      imageTimeout: 15000 // مهلة إضافية داخلية لانتظار جلب الصور العالقة
     });
 
-    const imgData = canvas.toDataURL('image/png');
+    // تحويل إلى JPEG بدلاً من PNG مع ضغط الجودة لـ 75% لتقليص الحجم بشكل هائل
+    const imgData = canvas.toDataURL('image/jpeg', 0.75); 
 
-    // 3. إعداد مستند الـ jsPDF وتوزيع الصفحات تلقائياً
-    const pdf = new jsPDF(orientation === 'landscape' ? 'l' : 'p', 'mm', pageSize.toLowerCase() as any);
+    // 4. إعداد مستند الـ jsPDF وتفعيل خاصية الضغط البرمجي للمستند (compress: true)
+    const pdf = new jsPDF({
+      orientation: orientation === 'landscape' ? 'l' : 'p',
+      unit: 'mm',
+      format: pageSize.toLowerCase() as any,
+      compress: true // تفعيل ضغط الـ PDF داخلياً لتقليل حجم الملف لأقصى درجة ممكنة
+    });
     
-    // حساب الأبعاد بناءً على المقاس المختار
-    const imgWidth = orientation === 'landscape' ? 297 : 210; // افتراضي A4
+    const imgWidth = orientation === 'landscape' ? 297 : 210; 
     const pageHeight = orientation === 'landscape' ? 210 : 295;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
     
     let heightLeft = imgHeight;
     let position = 0;
 
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    // إضافة الصفحة الأولى
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
     heightLeft -= pageHeight;
 
+    // توزيع باقي المحتوى على صفحات جديدة تلقائياً إذا كان الموقع طويلاً
     while (heightLeft >= 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
       heightLeft -= pageHeight;
     }
 
     const pdfOutput = pdf.output('blob');
     
-    // تنظيف الـ DOM وحذف الحاوية فوراً لحماية رامات متصفح المستخدم
+    // تنظيف الـ DOM وحذف الحاوية فوراً
     document.body.removeChild(tempContainer);
 
     return pdfOutput;
@@ -139,7 +149,7 @@ export default function App() {
           throw new Error(response.data.error || "Failed to fetch source blueprint from serverless proxy");
         }
 
-        // 2. استدعاء دالة التحويل لإنتاج الـ PDF Blob محلياً في جهاز العميل
+        // 2. استدعاء دالة التحويل لإنتاج الـ PDF Blob محلياً مضغوطاً وبأعلى استقرار
         const blob = await convertHtmlToPdfBlob(response.data.html);
         
         const safeName = `capture_${i + 1}_${targetUrl.replace(/https?:\/\/(www\.)?/, "").replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
@@ -256,9 +266,7 @@ export default function App() {
                   </div>
                 </div>
                 <a href={lastZipUrl} download="paperless_captures.zip" className="h-8 px-4 bg-zinc-100 hover:bg-white text-zinc-950 rounded-lg text-xs font-bold tracking-tight transition flex items-center gap-1.5">
-                  <a href={lastZipUrl} download="paperless_captures.zip" className="h-8 px-4 bg-zinc-100 hover:bg-white text-zinc-950 rounded-lg text-xs font-bold tracking-tight transition flex items-center gap-1.5">
-                    <Download className="w-3.5 h-3.5" /> Download ZIP
-                  </a>
+                  <Download className="w-3.5 h-3.5" /> Download ZIP
                 </a>
               </div>
             )}
