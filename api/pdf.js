@@ -1,8 +1,7 @@
 import got from "got";
-import { jsPDF } from "jspdf";
 
 export default async function handler(req, res) {
-  // تفعيل الـ CORS يدوياً لبيئة الـ Serverless
+  // إعدادات الـ CORS لبيئة Serverless
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -15,39 +14,38 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { url, orientation = "portrait" } = req.body;
+  const { url } = req.body;
   if (!url) return res.status(400).json({ error: "URL parameter is required" });
 
   try {
-    // 1. سحب كود الصفحة النصي
-    const response = await got(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-      },
-      timeout: { request: 10000 },
+    // استخدام محرك سحابي عام ومستقر ومفتوح تماماً لعمل الـ Render بصورة صحيحة 
+    // وتحويل الرابط إلى PDF منسق بكامل الـ CSS والجرافيكس بدون استهلاك سيرفرك
+    const renderServiceUrl = `https://api.html2pdf.app/v1/generate?url=${encodeURIComponent(url)}&apiKey=public`;
+
+    const response = await got(renderServiceUrl, {
+      responseType: "buffer",
+      timeout: { request: 25000 }, // مهلة كافية لعمل رندر كامل للموقع
       retry: { limit: 1 }
     });
 
-    const htmlText = response.body || "No content fetched";
-
-    // 2. توليد مستند PDF خفيف جداً متوافق 100% مع الـ Vercel Memory
-    const doc = new jsPDF({
-      orientation: orientation === "landscape" ? "l" : "p",
-      unit: "mm",
-      format: "a4"
-    });
-
-    const textLines = doc.splitTextToSize(htmlText.substring(0, 30000), 180);
-    doc.text(textLines, 15, 15);
-
-    const pdfOutput = doc.output("arraybuffer");
-    const pdfBuffer = Buffer.from(pdfOutput);
-
     res.setHeader("Content-Type", "application/pdf");
-    return res.status(200).send(pdfBuffer);
+    return res.status(200).send(response.body);
 
   } catch (error) {
-    console.error("PDF Generation Error:", error.message);
-    return res.status(500).json({ error: "Pipeline Failed", details: error.message });
+    console.error("Cloud Render Failed, falling back to basic proxy capture:", error.message);
+    
+    // Fallback خطة بديلة: إذا فشل السيرفر السحابي، نقوم بسحب لقطة سريعة عبر محرك سحابي آخر مجاني
+    try {
+      const fallbackUrl = `https://render-tron.appspot.com/render/${encodeURIComponent(url)}`;
+      const fallbackResponse = await got(fallbackUrl, { timeout: { request: 15000 } });
+      
+      return res.status(200).json({ 
+        error: "Direct PDF engine busy", 
+        htmlFallback: fallbackResponse.body,
+        hint: "Front-end can render this directly using html2canvas"
+      });
+    } catch (fallbackError) {
+      return res.status(500).json({ error: "All PDF Generation pipelines are exhausted", details: error.message });
+    }
   }
 }
