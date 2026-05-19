@@ -1,6 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import JSZip from "jszip";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
+import axios from "axios";
 import { 
   Printer, 
   Loader2, 
@@ -22,6 +25,12 @@ interface PrintStatus {
   blob?: Blob;
 }
 
+interface ApiResponse {
+  success: boolean;
+  html?: string;
+  error?: string;
+}
+
 export default function App() {
   const [urlsInput, setUrlsInput] = useState("");
   const [isPrinting, setIsPrinting] = useState(false);
@@ -34,6 +43,59 @@ export default function App() {
   const [waitMode, setWaitMode] = useState<'auto' | 'manual'>('auto');
   const [manualWaitTime, setManualWaitTime] = useState("2000");
   const [statuses, setStatuses] = useState<PrintStatus[]>([]);
+
+  // دالة داخلية سريعة لتحويل سورس الـ HTML المستلم محلياً إلى ملف PDF منسق
+  const convertHtmlToPdfBlob = async (htmlContent: string): Promise<Blob> => {
+    // 1. إنشاء حاوية مؤقتة مخفية لحقن الـ HTML مع الحفاظ على أبعاد شاشة الكمبيوتر لضمان الـ Desktop View
+    const tempContainer = document.createElement('div');
+    tempContainer.style.position = 'absolute';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.top = '0px';
+    tempContainer.style.width = '1280px'; // عرض قياسي لمنع تداخل العناصر والـ Responsive Breakpoints
+    tempContainer.innerHTML = htmlContent;
+    document.body.appendChild(tempContainer);
+
+    // انتظر أجزاء من الثانية لضمان استقرار الـ Styles داخلياً قبل التقاطها
+    await new Promise((resolve) => setTimeout(resolve, Number(waitMode === 'manual' ? manualWaitTime : 500)));
+
+    // 2. التقاط لقطة شاشة دقيقة بكامل التنسيقات والألوان
+    const canvas = await html2canvas(tempContainer, {
+      useCORS: true,
+      allowTaint: true,
+      scale: 1.5, // درجة وضوح ممتازة متوازنة مع حجم الملف
+      logging: false
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+
+    // 3. إعداد مستند الـ jsPDF وتوزيع الصفحات تلقائياً
+    const pdf = new jsPDF(orientation === 'landscape' ? 'l' : 'p', 'mm', pageSize.toLowerCase() as any);
+    
+    // حساب الأبعاد بناءً على المقاس المختار
+    const imgWidth = orientation === 'landscape' ? 297 : 210; // افتراضي A4
+    const pageHeight = orientation === 'landscape' ? 210 : 295;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    
+    let heightLeft = imgHeight;
+    let position = 0;
+
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+
+    while (heightLeft >= 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+
+    const pdfOutput = pdf.output('blob');
+    
+    // تنظيف الـ DOM وحذف الحاوية فوراً لحماية رامات متصفح المستخدم
+    document.body.removeChild(tempContainer);
+
+    return pdfOutput;
+  };
 
   const handleProcess = async (e: FormEvent) => {
     e.preventDefault();
@@ -62,23 +124,24 @@ export default function App() {
       setStatuses(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'processing' } : s));
 
       try {
-        const response = await fetch("/api/pdf", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url: targetUrl,
-            pageSize,
-            orientation,
-            includeBackground,
-            waitMode,
-            manualWaitTime,
-            fullPage
-          })
+        // 1. استدعاء السيرفر لجلب كود الـ HTML الخاص بالموقع
+        const response = await axios.post<ApiResponse>("/api/pdf", {
+          url: targetUrl,
+          pageSize,
+          orientation,
+          includeBackground,
+          waitMode,
+          manualWaitTime,
+          fullPage
         });
 
-        if (!response.ok) throw new Error(`Server returned status ${response.status}`);
+        if (!response.data || !response.data.success || !response.data.html) {
+          throw new Error(response.data.error || "Failed to fetch source blueprint from serverless proxy");
+        }
 
-        const blob = await response.blob();
+        // 2. استدعاء دالة التحويل لإنتاج الـ PDF Blob محلياً في جهاز العميل
+        const blob = await convertHtmlToPdfBlob(response.data.html);
+        
         const safeName = `capture_${i + 1}_${targetUrl.replace(/https?:\/\/(www\.)?/, "").replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
         zip.file(safeName, blob);
         hasSuccessfulFiles = true;
@@ -193,7 +256,9 @@ export default function App() {
                   </div>
                 </div>
                 <a href={lastZipUrl} download="paperless_captures.zip" className="h-8 px-4 bg-zinc-100 hover:bg-white text-zinc-950 rounded-lg text-xs font-bold tracking-tight transition flex items-center gap-1.5">
-                  <Download className="w-3.5 h-3.5" /> Download ZIP
+                  <a href={lastZipUrl} download="paperless_captures.zip" className="h-8 px-4 bg-zinc-100 hover:bg-white text-zinc-950 rounded-lg text-xs font-bold tracking-tight transition flex items-center gap-1.5">
+                    <Download className="w-3.5 h-3.5" /> Download ZIP
+                  </a>
                 </a>
               </div>
             )}
